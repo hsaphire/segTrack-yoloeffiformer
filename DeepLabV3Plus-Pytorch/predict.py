@@ -67,7 +67,7 @@ def main():
         opts.num_classes = 19
         decode_fn = Cityscapes.decode_target
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = opts.gpu_id
+    #os.environ['CUDA_VISIBLE_DEVICES'] = opts.gpu_id
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print("Device: %s" % device)
 
