@@ -53,7 +53,7 @@ class Deeplab():
             self.model = nn.DataParallel(model)
             self.model.to(device)
         with torch.no_grad():
-        model = model.eval()
+            self.model = model.eval()
         
     def detect(img_path):
         if self.opts.crop_val:
@@ -83,19 +83,32 @@ class Deeplab():
         
         return colorized_preds
             
-
+class Yolov7_tracker():
     
+    def __init__(opt):
+        self.opts = opt
+        self.device = select_device(self.opt.device)  #device for yolo
+        self.yolo_model = attempt_load(weights,map_location=device_yolo)
+        self.stride = int(model.stride.max()) #model stride
+        self.imgsz = check_img_size(imgsz,s=stride)
+        
+        if trace:
+            self.model = TracedModel(model, device, opt.img_size)
+
+        if half:
+            self.model.half()  # to FP16
+        self.names = model.module.names if hasattr(model, 'module') else model.names
+        self.colors = [[random.randint(0, 255) for _ in range(3)] for _ in names] 
+        
+    def predict(img_path):
+        
+        
 def main(opt):
     # setup dataloader
     source,weights,view_img,save_txt,imgsz,trace = opt.source,opt.weights,opt.view_img,opt.save_txt,opt.img_size,not opt.no_trace
     ave_img = not opt.nosave and not source.endswith('.txt')  # save inference images
-    
-    device_yolo = select_device(opt.device)  #device for yolo
-    
-    yolo_model = attempt_load(weights,map_location=device_yolo)
-    stride = int(model.stride.max()) #model stride
-    imgsz = check_img_size(imgsz,s=stride)
-    dataset = LoadImages(source,img_size=imgsz,stride=stride)
+    yolov7_track = Yolov7_tracker(opt)
+    dataset = LoadImages(source,img_size=yolov7_tracker.self.imgsz,stride=yolov7_tracker.selfstride)
     
 if __name__ == '__main__':
     
