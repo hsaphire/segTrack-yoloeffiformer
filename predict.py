@@ -40,20 +40,21 @@ class Deeplab():
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.opt = opt
         self.pretrained = pretrained
-        self.model = network.modeling.__dict__[self.opt.model]
-        if opts.ckpt is not None and os.path.isfile(self.opts.ckpt):
-            self.checkpoint = torch.load(self.opts.ckpt, map_location=torch.device('cpu'))
-            self.model.load_state_dict(checkpoint["model_state"])
-            self.model = nn.DataParallel(model)
-            self.model.to(device)
-            print("Resume model from %s" % self.opts.ckpt)
-            del checkpoint
+        self.model = network.modeling.__dict__[self.opt.model](num_classes=21, output_stride=opt.output_stride)
+       
+        if self.opt.ckpt is not None and os.path.isfile(self.opt.ckpt):
+            self.checkpoint = torch.load(self.opt.ckpt, map_location=torch.device('cpu'))
+            self.model.load_state_dict(self.checkpoint["model_state"])
+            self.model = nn.DataParallel(self.model)
+            self.model.to(self.device)
+            print("Resume model from %s" % self.opt.ckpt)
+            del self.checkpoint
         else:
             print("[!] Retrain")
-            self.model = nn.DataParallel(model)
-            self.model.to(device)
+            self.model = nn.DataParallel(self.model)
+            self.model.to(self.device)
         with torch.no_grad():
-            self.model = model.eval()
+            self.model = self.model.eval()
         
     def detect(self,img_path):
         if self.opts.crop_val:
@@ -85,20 +86,18 @@ class Deeplab():
             
 class Yolov7_tracker():
     
-    def __init__(self, opt):
+    def __init__(self, opt,weights,device,imgsz,trace):
         self.opts = opt
-        self.device = select_device(self.opt.device)  #device for yolo
-        self.yolo_model = attempt_load(weights,map_location=device_yolo)
-        self.stride = int(model.stride.max()) #model stride
-        self.imgsz = check_img_size(imgsz,s=stride)
+        self.yolo_model = attempt_load(weights,map_location=device)
+        self.stride = int(self.yolo_model.stride.max()) #model stride
+        self.imgsz = check_img_size(imgsz,s=self.stride)
         
         if trace:
-            self.model = TracedModel(model, device, opt.img_size)
+            self.model = TracedModel(self.yolo_model , device, opt.img_size)
 
-        if half:
-            self.model.half()  # to FP16
-        self.names = model.module.names if hasattr(model, 'module') else model.names
-        self.colors = [[random.randint(0, 255) for _ in range(3)] for _ in names] 
+       
+        self.names = model.module.names if hasattr(self.model, 'module') else self.model.names
+        self.colors = [[random.randint(0, 255) for _ in range(3)] for _ in self.names] 
         
     def predict(self,dataset):
         
@@ -177,13 +176,14 @@ class Yolov7_tracker():
             
 def main(opt):
     # setup dataloader
-    opt = parser.parse_args()
+    
     source,weights,view_img,save_txt,imgsz,trace = opt.source,opt.weights,opt.view_img,opt.save_txt,opt.img_size,not opt.no_trace
     ave_img = not opt.nosave and not source.endswith('.txt')  # save inference images
-    yolov7_track = Yolov7_tracker(opt)
-    dataset = LoadImages(source,img_size=yolov7_tracker.imgsz,stride=yolov7_tracker.stride)
+    device = select_device(opt.device)
     deeplab = Deeplab(opt.ckpt,opt)
-    
+    yolov7_track = Yolov7_tracker(opt,weights,device,imgsz,trace)
+    dataset = LoadImages(source,img_size=yolov7_track.imgsz,stride=yolov7_track.stride)
+    deeplab = Deeplab(opt.ckpt,opt)
     
     
 if __name__ == '__main__':
@@ -248,3 +248,4 @@ if __name__ == '__main__':
     ########### option endline ######################
     
     opt = parser.parse_args()
+    main(opt)
