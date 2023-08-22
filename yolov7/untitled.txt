@@ -1,0 +1,7 @@
+python train.py --weights yolov7.pt --cfg cfg/training/yolov7-davinci.yaml --data data/davinci.yaml --device 0,1 --batch-size 4 --epoch 100
+
+python detect.py --weights yolov7.pt --conf 0.25 --img-size 640 --source yourvideo.mp4
+
+python detect.py --weights runs/train/exp8/weights/best.pt --conf 0.25 --img-size 640 --source videos/palace.mp4
+
+python detect-Copy1.py --weights runs/train/exp11/weights/best.pt --conf 0.25 --device 0,1 --img-size 640 --source videos/palace.mp4
