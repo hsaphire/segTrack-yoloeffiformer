@@ -1,0 +1,1 @@
+python predict.py --ckpt DeepLabV3Plus-Pytorch/checkpoints/best_deeplabv3plus_effiformer_voc_os16.pth --dataset voc --model deeplabv3plus_effiformer --weight yolov7/pretrained/yolov7.pt 
