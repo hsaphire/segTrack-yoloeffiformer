@@ -1,5 +1,5 @@
-DeepLabV3Plus_Pytorch/checkpoints
-DeepLabV3Plus_Pytorch/pretrained
-yolov7/pretrained
-yolov7/videos
+DeepLabV3Plus_Pytorch/checkpoints/*
+DeepLabV3Plus_Pytorch/pretrained/*
+yolov7/pretrained/*
+yolov7/videos/*
 
