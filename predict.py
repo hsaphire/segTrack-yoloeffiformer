@@ -11,7 +11,7 @@ from torch.utils import data
 from DeepLabV3Plus_Pytorch.datasets import data
 from torchvision import transforms as T
 from DeepLabV3Plus_Pytorch.metrics import StreamSegMetrics
-
+from DeepLabV3Plus_Pytorch.datasets import VOCSegmentation, Cityscapes, cityscapes
 import torch
 import torch.nn as nn
 
@@ -36,8 +36,9 @@ from yolov7.utils.timer import Timer
 
 
 class Deeplab():
-    def __init__(self,pretrained,opt):
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    def __init__(self,pretrained,opt,device,decode_fn):
+        self.device = device
+        self.decode_fn = decode_fn
         self.opt = opt
         self.pretrained = pretrained
         self.model = network.modeling.__dict__[self.opt.model](num_classes=21, output_stride=opt.output_stride)
@@ -47,26 +48,31 @@ class Deeplab():
             self.model.load_state_dict(self.checkpoint["model_state"])
             self.model = nn.DataParallel(self.model)
             self.model.to(self.device)
+            self.model.half()
             print("Resume model from %s" % self.opt.ckpt)
+            #print(self.model.device)
             del self.checkpoint
         else:
             print("[!] Retrain")
             self.model = nn.DataParallel(self.model)
             self.model.to(self.device)
+            #print(self.model.device)
         with torch.no_grad():
             self.model = self.model.eval()
         
     def detect(self,img_path):
-        if self.opts.crop_val:
+        if self.opt.crop_val:
             transform = T.Compose([
-                    T.Resize(opts.crop_size),
-                    T.CenterCrop(opts.crop_size),
+                    T.Resize((224,224)),
+                    T.Resize(opt.crop_size),
+                    T.CenterCrop(opt.crop_size),
                     T.ToTensor(),
                     T.Normalize(mean=[0.485, 0.456, 0.406],
                                     std=[0.229, 0.224, 0.225]),
                 ])
         else:
             transform = T.Compose([
+                T.Resize((224,224)),
                     T.ToTensor(),
                     T.Normalize(mean=[0.485, 0.456, 0.406],
                                     std=[0.229, 0.224, 0.225]),
@@ -75,23 +81,28 @@ class Deeplab():
         ext = os.path.basename(img_path).split('.')[-1]
         img_name = os.path.basename(img_path)[:-len(ext)-1]
         img = Image.open(img_path).convert('RGB')
+        (w,h) = img.size
+        print("w,h",(w,h))
         img = transform(img).unsqueeze(0) # To tensor of NCHW
-        img = img.to(device)
-
+        img = img.to(self.device)
+        img = img.half()
+        
         pred =self.model(img).max(1)[1].cpu().numpy()[0] # HW
-        colorized_preds = decode_fn(pred).astype('uint8')
+        colorized_preds = self.decode_fn(pred).astype('uint8')
         colorized_preds = Image.fromarray(colorized_preds)
+       
         
         return colorized_preds
             
 class Yolov7_tracker():
     
     def __init__(self, opt,weights,device,imgsz,trace):
-        self.opts = opt
-        self.yolo_model = attempt_load(weights,map_location=device)
+        self.device = device
+        self.opt = opt
+        self.yolo_model = attempt_load(weights,map_location=self.device)
         self.stride = int(self.yolo_model.stride.max()) #model stride
         self.imgsz = check_img_size(imgsz,s=self.stride)
-        
+        self.tracker = BYTETracker(opt,frame_rate=30)
         if trace:
             self.model = TracedModel(self.yolo_model , device, opt.img_size)
 
@@ -99,55 +110,56 @@ class Yolov7_tracker():
         self.names = model.module.names if hasattr(self.model, 'module') else self.model.names
         self.colors = [[random.randint(0, 255) for _ in range(3)] for _ in self.names] 
         
-    def predict(self,dataset):
+    def predict(self,img):
         
         if self.device.type !="cpu":
-            self.model(torch.zeros(1,3,self.imgsz,self.imgsz).to(device).type_as(next(mdoel.parameters())))
-        old_img_w = old_img_h = imgsz
+            half = True
+            self.model(torch.zeros(1,3,self.imgsz,self.imgsz).to(self.device).type_as(next(self.model.parameters())))
+        old_img_w = old_img_h = self.imgsz
         old_img_b = 1
         
-        for path, img, im0s, vid_cap in dataset:
-            img = torch.from_numpy(img).to(device)
-            img = img.half() if half else img.float()  # uint8 to fp16/32
-            img /= 255.0  # 0 - 255 to 0.0 - 1.0
-            if img.ndimension() == 3:
-                img = img.unsqueeze(0)
-
-            if device.type != 'cpu' and (old_img_b != img.shape[0] or old_img_h != img.shape[2] or old_img_w != img.shape[3]):
-                old_img_b = img.shape[0]
-                old_img_h = img.shape[2]
-                old_img_w = img.shape[3]
-                for i in range(3):
-                    self.model(img, augment=self.opt.augment)[0]
-
-            t1 = time_synchronized()
-            with torch.no_grad():   # Calculating gradients would cause a GPU memory leak
-                pred = self.model(img, augment=self.opt.augment)[0]
-
-            t2 = time_synchronized()
-
-            # Apply NMS
-            pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
-            t3 = time_synchronized()
-
-        return pred ,t1 ,t2 ,t3
         
-    def track(self,pred):
+        img = torch.from_numpy(img).to(self.device)
+        img =  img.float()  # uint8 to fp16/32
+        img /= 255.0  # 0 - 255 to 0.0 - 1.0
+        if img.ndimension() == 3:
+            img = img.unsqueeze(0)
+
+        if self.device.type != 'cpu' and (old_img_b != img.shape[0] or old_img_h != img.shape[2] or old_img_w != img.shape[3]):
+            old_img_b = img.shape[0]
+            old_img_h = img.shape[2]
+            old_img_w = img.shape[3]
+            for i in range(3):
+                self.model(img, augment=self.opt.augment)[0]
+
+        t1 = time_synchronized()
+        with torch.no_grad():   # Calculating gradients would cause a GPU memory leak
+            pred = self.model(img, augment=self.opt.augment)[0]
+
+        t2 = time_synchronized()
+
+        # Apply NMS
+        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+        t3 = time_synchronized()
+        img = 255*(img.cpu())
+        return pred,img ,t1 ,t2 ,t3
         
+    def track(self,pred,vid_cap,img):
+        
+        out = cv2.cvtColor(np.transpose(img[0].numpy().astype(np.uint8),(1,2,0)),cv2.COLOR_BGR2RGB)
         cls_list = []
         for i,det in enumerate(pred):
-            img = 255*(img.cpu())
-            out = cv2.cvtColor(np.transpose(img[0].numpy().astype(np.uint8),(1,2,0)),cv2.COLOR_BGR2RGB)
+            
             for *xyxy, conf, cls in reversed(det):
                 results = []
                 online_tlwhs = []
                 online_ids = []
                 online_scores = []
 
-                obj_conf = torch.ones(det.shape[0],1).to(device)
+                obj_conf = torch.ones(det.shape[0],1).to(self.device)
                 
                 det2 = torch.cat([det[ :,:4],obj_conf,det[ :,4:]],axis=1)
-                online_targets = tracker.update(det2, [384, 640], (640,640))
+                online_targets =self.tracker.update(det2, [384, 640], (640,640))
                
                 cls_list.append(int(cls))
                 
@@ -159,32 +171,69 @@ class Yolov7_tracker():
                         online_tlwhs.append(tlwh)
                         online_ids.append(tid)
                         online_scores.append(t.score)
-                        results.append(f"{count},{tid},{tlwh[0]:.2f},{tlwh[1]:.2f},{tlwh[2]:.2f},{tlwh[3]:.2f},{t.score:.2f},-1,-1,-1\n")
                         
+               
             if vid_cap:  # video
                 fps = vid_cap.get(cv2.CAP_PROP_FPS)
-            
-            online_im = plot_tracking_route(
-                    out, online_tlwhs,cls_list,online_ids, frame_id=count + 1, fps=fps,source=source
-                )
-            try:
-                os.makedirs(f"img_save/{source}")
-            except FileExistsError:
-                pass
-            tracksave_path = os.path.join(f"img_save/{source}")
-            cv2.imwrite(os.path.join(img_save,f"{count}_video_save.png"),online_im)
+            else:
+                fps = 0
+        return out,online_tlwhs,online_ids,cls_list,fps
+           
+def translucent(bottom,top):
+    
+    out = cv2.addWeighted(bottom,0.8,top,0.2,0)
+    
+    return out
+    
+    
+        
+    
             
 def main(opt):
     # setup dataloader
     
     source,weights,view_img,save_txt,imgsz,trace = opt.source,opt.weights,opt.view_img,opt.save_txt,opt.img_size,not opt.no_trace
-    ave_img = not opt.nosave and not source.endswith('.txt')  # save inference images
-    device = select_device(opt.device)
-    deeplab = Deeplab(opt.ckpt,opt)
-    yolov7_track = Yolov7_tracker(opt,weights,device,imgsz,trace)
-    dataset = LoadImages(source,img_size=yolov7_track.imgsz,stride=yolov7_track.stride)
-    deeplab = Deeplab(opt.ckpt,opt)
     
+    if opt.dataset.lower() == 'voc':
+        opt.num_classes = 21
+        decode_fn = VOCSegmentation.decode_target
+    elif opt.dataset.lower() == 'cityscapes':
+        opt.num_classes = 19
+        decode_fn = Cityscapes.decode_target
+        
+    ave_img = not opt.nosave and not source.endswith('.txt')  # save inference images
+    device1 = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device2 = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    deeplab = Deeplab(opt.ckpt,opt,device1,decode_fn)
+    yolov7_track = Yolov7_tracker(opt,weights,device2,imgsz,trace)
+    dataset = LoadImages(source,img_size=yolov7_track.imgsz,stride=yolov7_track.stride)
+    
+    count = 0
+    for path, img, im0s, vid_cap in tqdm(dataset):
+        c,h,w= img.shape
+        if vid_cap:
+            fps = vid_cap.get(cv2.CAP_PROP_FPS)
+        segment_out = deeplab.detect(path)
+        segment_out =cv2.cvtColor(np.asarray(segment_out), cv2.COLOR_RGB2BGR)
+        
+        segment_out = cv2.resize(segment_out,(w,h),interpolation=cv2.INTER_LINEAR)
+        
+        image = torch.from_numpy(img)
+        image = image[np.newaxis, :]
+        image = image.permute(2,3,1,0)
+        image = torch.squeeze(image)
+       
+        seg_img_fuse = translucent(image.numpy(),segment_out)
+        
+        
+        yolo_out,img_cpu,_,_,_ = yolov7_track.predict(img)
+        
+        out,online_tlwhs,online_ids,cls_list,fps = yolov7_track.track(yolo_out,vid_cap,img_cpu)
+        
+        translucent_track = plot_tracking_route(out, online_tlwhs,cls_list,online_ids, frame_id=count+1, fps=fps)
+        count +=1
+        
+            
     
 if __name__ == '__main__':
     
@@ -240,11 +289,12 @@ if __name__ == '__main__':
                         help='crop validation (default: False)')
     parser.add_argument("--val_batch_size", type=int, default=4,
                         help='batch size for validation (default: 4)')
-    parser.add_argument("--crop_size", type=int, default=513)
+    parser.add_argument("--crop_size", type=int, default=224)
 
     
     parser.add_argument("--ckpt", default=None, type=str,
                         help="resume from checkpoint")
+    
     ########### option endline ######################
     
     opt = parser.parse_args()

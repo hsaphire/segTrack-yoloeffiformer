@@ -716,8 +716,8 @@ def efficientformerv2_l(pretrained=False, **kwargs):
 
     ckpt = torch.load(pretrained)
 
-    for key, value in ckpt.items():
-        print(key)
+    """for key, value in ckpt.items():
+        print(key)"""
     
     model.load_state_dict(ckpt['model'], strict = False)
         

@@ -13,8 +13,18 @@ class _SimpleSegmentationModel(nn.Module):
     def forward(self, x):
         input_shape = x.shape[-2:]
         features = self.backbone(x)
-        x = self.classifier(features)
-        x = F.interpolate(x, size=input_shape, mode='bilinear', align_corners=False)
+        #print((features[-1]).shape)
+        
+        
+       
+        try:
+        #print(features)
+            x = self.classifier(features)
+            x = F.interpolate(x, size=input_shape, mode='bilinear', align_corners=False)
+        except TypeError:
+            features = OrderedDict([('out',features[-1])])
+            x = self.classifier(features)
+            x = F.interpolate(x, size=input_shape, mode='bilinear', align_corners=False)
         return x
 
 
