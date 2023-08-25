@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding:utf-8 -*-
-# Copyright (c) 2014-2021 Megvii Inc. All rights reserved.
-
 import cv2
 import numpy as np
 import os
@@ -55,7 +51,15 @@ names=[ "Fenastrate",
     "Tenaculum",
     "Bipolar focept",
     "Needle Driver" ]
-name_coco = [str(i) for i in range(80)]
+name_coco = [ 'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
+         'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
+         'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
+         'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard',
+         'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
+         'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch',
+         'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
+         'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear',
+         'hair drier', 'toothbrush' ]
 def plot_tracking(image, tlwhs,obj_ids, scores=None, frame_id=0, fps=0., ids2=None):
     im = np.ascontiguousarray(np.copy(image)).astype(np.uint8)
     im_h, im_w = im.shape[:2]
@@ -115,20 +119,16 @@ def path(obj_route,h,w,vis_id):   #here need to insert id that you want
     return background
 
 
-def plot_tracking_route(image, tlwhs,obj_clses,obj_ids, scores=None, frame_id=0, fps=0., ids2=None,source=None):
+def plot_tracking_route(image, tlwhs,obj_clses,obj_ids, scores=None, frame_id=0, fps=0., ids2=None,source=None,yolo_dataset=None):
     im = np.ascontiguousarray(np.copy(image)).astype(np.uint8)
     im_h, im_w = im.shape[:2]
     
     top_view = np.zeros([im_w, im_w, 3], dtype=np.uint8)
-    #centerpoints=[]
-    #track_image_dir = os.path.join('img_save',"track_routes")
-    #text_scale = max(1, image.shape[1] / 1600.)
-    #text_thickness = 2
-    #line_thickness = max(1, int(image.shape[1] / 500.))
+    
     text_scale = 0.5
     text_thickness = 2
     line_thickness = 3
-    
+    #print(obj_clses,tlwhs)
     for i, (tlwh,obj_cls) in enumerate(zip(tlwhs,obj_clses)):
         track_black = np.zeros([im_h,im_w,3])
         x1, y1, w, h = tlwh
@@ -185,8 +185,10 @@ def plot_tracking_route(image, tlwhs,obj_clses,obj_ids, scores=None, frame_id=0,
          
         if intbox:
             #print("obj_cls",obj_cls)
-            lines = id_text +" "+names[obj_cls]
-            #lines = id_text +" "+name_coco[obj_cls]
+            if yolo_dataset =="davinci":
+                lines = id_text +" "+names[obj_cls]
+            elif yolo_dataset =="coco":
+                lines = id_text +" "+name_coco[obj_cls]
             
             #print(type(lines))
             #print(lines,intbox[0:2])
