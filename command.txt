@@ -1,1 +1,3 @@
-python predict.py --ckpt DeepLabV3Plus-Pytorch/checkpoints/best_deeplabv3plus_effiformer_voc_os16.pth --dataset voc --model deeplabv3plus_effiformer --weight yolov7/pretrained/yolov7.pt --device 1 
+python predict.py --ckpt DeepLabV3Plus_Pytorch/checkpoints/best_deeplabv3plus_mobilenet_voc_os16.pth --dataset voc --model deeplabv3plus_effiformer --weight pretrained/yolov7.pt  --source train.jpg 
+
+python predict.py --ckpt DeepLabV3Plus_Pytorch/checkpoints/best_deeplabv3plus_effiformer_voc_os16.pth --yolo_dataset coco --dataset voc --model deeplabv3plus_effiformer --weight pretrained/yolov7.pt  --source train.jpg 

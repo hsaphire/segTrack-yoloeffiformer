@@ -22,7 +22,7 @@ from glob import glob
 ######## yolo deeplab cut line ###########
 import time
 from pathlib import Path 
-from yolov7.tracker.byte_tracker import BYTETracker
+from yolov7.tracker.mod_byte_tracker import BYTETracker
 import cv2
 import torch.backends.cudnn as cudnn
 from yolov7.models.experimental import attempt_load
@@ -34,6 +34,15 @@ from yolov7.utils.torch_utils import select_device, load_classifier, time_synchr
 from yolov7.utils.visualize import plot_tracking,plot_tracking_route
 from yolov7.utils.timer import Timer
 
+name_coco = [ 'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
+         'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
+         'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
+         'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard',
+         'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
+         'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch',
+         'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
+         'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear',
+         'hair drier', 'toothbrush' ]
 
 class Deeplab():
     def __init__(self,pretrained,opt,device,decode_fn):
@@ -82,7 +91,6 @@ class Deeplab():
         img_name = os.path.basename(img_path)[:-len(ext)-1]
         img = Image.open(img_path).convert('RGB')
         (w,h) = img.size
-        print("w,h",(w,h))
         img = transform(img).unsqueeze(0) # To tensor of NCHW
         img = img.to(self.device)
         img = img.half()
@@ -143,41 +151,50 @@ class Yolov7_tracker():
         t3 = time_synchronized()
         img = 255*(img.cpu())
         return pred,img ,t1 ,t2 ,t3
+     
         
-    def track(self,pred,vid_cap,img):
+        
+    def track(self,pred,vid_cap,img,img_size):
         
         out = cv2.cvtColor(np.transpose(img[0].numpy().astype(np.uint8),(1,2,0)),cv2.COLOR_BGR2RGB)
+        
         cls_list = []
         for i,det in enumerate(pred):
             
             for *xyxy, conf, cls in reversed(det):
+                #print("xyxy",*xyxy)
                 results = []
+                online_cls = []
                 online_tlwhs = []
                 online_ids = []
                 online_scores = []
-
-                obj_conf = torch.ones(det.shape[0],1).to(self.device)
                 
-                det2 = torch.cat([det[ :,:4],obj_conf,det[ :,4:]],axis=1)
-                online_targets =self.tracker.update(det2, [384, 640], (640,640))
+                obj_conf = torch.ones(det.shape[0],1).to(self.device)
                
-                cls_list.append(int(cls))
+                det2 = torch.cat([det[ :,:4],det[ :,4:]],axis=1)
+                det2=det2.cpu()
+                online_targets =self.tracker.update(det2, [img_size[0],img_size[1]], img_size)
+                
+                
                 
                 for t in online_targets:
+                   
                     tlwh = t.tlwh
+                    track_cls = t.test_cls
                     tid = t.track_id
                     vertical = tlwh[2] / tlwh[3] > opt.aspect_ratio_thresh
                     if tlwh[2] * tlwh[3] > opt.min_box_area and not vertical:
                         online_tlwhs.append(tlwh)
                         online_ids.append(tid)
                         online_scores.append(t.score)
-                        
+                        online_cls.append(int(track_cls))
                
             if vid_cap:  # video
                 fps = vid_cap.get(cv2.CAP_PROP_FPS)
             else:
                 fps = 0
-        return out,online_tlwhs,online_ids,cls_list,fps
+            
+        return out,online_tlwhs,online_ids,cls_list,fps,online_cls
            
 def translucent(bottom,top):
     
@@ -192,7 +209,7 @@ def translucent(bottom,top):
 def main(opt):
     # setup dataloader
     
-    source,weights,view_img,save_txt,imgsz,trace = opt.source,opt.weights,opt.view_img,opt.save_txt,opt.img_size,not opt.no_trace
+    source,weights,view_img,save_txt,imgsz,trace,yolo_dataset=  opt.source,opt.weights,opt.view_img,opt.save_txt,opt.img_size,not opt.no_trace,opt.yolo_dataset
     
     if opt.dataset.lower() == 'voc':
         opt.num_classes = 21
@@ -208,8 +225,14 @@ def main(opt):
     yolov7_track = Yolov7_tracker(opt,weights,device2,imgsz,trace)
     dataset = LoadImages(source,img_size=yolov7_track.imgsz,stride=yolov7_track.stride)
     
+    try:
+        os.makedirs(f"result/{source}")
+    except FileExistsError:
+        pass
+        
     count = 0
     for path, img, im0s, vid_cap in tqdm(dataset):
+        
         c,h,w= img.shape
         if vid_cap:
             fps = vid_cap.get(cv2.CAP_PROP_FPS)
@@ -228,11 +251,16 @@ def main(opt):
         
         yolo_out,img_cpu,_,_,_ = yolov7_track.predict(img)
         
-        out,online_tlwhs,online_ids,cls_list,fps = yolov7_track.track(yolo_out,vid_cap,img_cpu)
+        out,online_tlwhs,online_ids,cls_list,fps,track_cls = yolov7_track.track(yolo_out,vid_cap,img_cpu,(w,h))
+        #print(online_tlwhs)
         
-        translucent_track = plot_tracking_route(out, online_tlwhs,cls_list,online_ids, frame_id=count+1, fps=fps)
+        translucent_track = plot_tracking_route(seg_img_fuse, online_tlwhs,track_cls,online_ids, frame_id=count+1, fps=fps,yolo_dataset=yolo_dataset)
+        
         count +=1
         
+        #print(translucent_track)
+        save_path = os.path.join(f"result/{source}")
+        cv2.imwrite(os.path.join(save_path,f"{count}.png"),translucent_track)
             
     
 if __name__ == '__main__':
@@ -241,8 +269,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='yolov7.pt', help='model.pt path(s)')
     parser.add_argument('--source', type=str, default='inference/images', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--yolo_dataset', type=str, default='coco')
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.7, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--view-img', action='store_true', help='display results')
