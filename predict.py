@@ -202,7 +202,25 @@ def translucent(bottom,top):
     
     return out
     
-    
+def basic(input_video = 'outdoor.mp4', source = "LASAD-YOLO-s", output_video = 'out.mp4'):
+    video = cv2.VideoCapture(input_video) # 23.97602537435857
+    fps = video.get(cv2.CAP_PROP_FPS)
+    print("Frames per second using video.get(cv2.CAP_PROP_FPS) : {0}".format(fps))
+
+    img = cv2.imread(os.path.join(source, '1.png'))  
+    size = (img.shape[1],img.shape[0])  
+    print(size)
+    fourcc = cv2.VideoWriter_fourcc(*"XVID") 
+    videoWrite = cv2.VideoWriter(output_video,fourcc,fps,size)
+
+    files = os.listdir(os.path.join(source))
+    out_num = len(files)
+    for i in range(1, out_num):
+        
+        fileName = os.path.join(source, f'{i}.png')   
+        img = cv2.imread(fileName)
+        videoWrite.write(img)
+    videoWrite.release()    
         
     
             
@@ -261,6 +279,8 @@ def main(opt):
         #print(translucent_track)
         save_path = os.path.join(f"result/{source}")
         cv2.imwrite(os.path.join(save_path,f"{count}.png"),translucent_track)
+        
+    basic(input_video = opt.input_video, source = save_path, output_video = 'out.mp4')
             
     
 if __name__ == '__main__':
@@ -268,7 +288,9 @@ if __name__ == '__main__':
     # yolo options
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='yolov7.pt', help='model.pt path(s)')
-    parser.add_argument('--source', type=str, default='inference/images', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--source', type=str, default='inference/images', help='source')
+    parser.add_argument('--input_video', type=str, default='videos/bus.mp4', help='source')
+    # file/folder, 0 for webcam
     parser.add_argument('--yolo_dataset', type=str, default='coco')
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.7, help='object confidence threshold')
