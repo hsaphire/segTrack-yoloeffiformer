@@ -128,7 +128,7 @@ def plot_tracking_route(image, tlwhs,obj_clses,obj_ids, scores=None, frame_id=0,
     text_scale = 0.5
     text_thickness = 2
     line_thickness = 3
-    #print(obj_clses,tlwhs)
+    #print(obj_clses)
     for i, (tlwh,obj_cls) in enumerate(zip(tlwhs,obj_clses)):
         track_black = np.zeros([im_h,im_w,3])
         x1, y1, w, h = tlwh
@@ -185,8 +185,10 @@ def plot_tracking_route(image, tlwhs,obj_clses,obj_ids, scores=None, frame_id=0,
          
         if intbox:
             #print("obj_cls",obj_cls)
+            #print(yolo_dataset)
             if yolo_dataset =="davinci":
                 lines = id_text +" "+names[obj_cls]
+                #print(names[obj_cls])
             elif yolo_dataset =="coco":
                 lines = id_text +" "+name_coco[obj_cls]
             

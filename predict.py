@@ -195,10 +195,10 @@ class Yolov7_tracker():
                 fps = 0
             
         return out,online_tlwhs,online_ids,cls_list,fps,online_cls
-           
+        
 def translucent(bottom,top):
     
-    out = cv2.addWeighted(bottom,0.8,top,0.2,0)
+    out = cv2.addWeighted(bottom,1,top,0.5,0)
     
     return out
     
@@ -245,6 +245,7 @@ def main(opt):
     
     try:
         os.makedirs(f"result/{source}")
+        os.makedirs(f"mask/{source}")
     except FileExistsError:
         pass
         
@@ -259,20 +260,22 @@ def main(opt):
         
         segment_out = cv2.resize(segment_out,(w,h),interpolation=cv2.INTER_LINEAR)
         
+        cv2.imwrite(os.path.join(f"mask/{source}",f"{count}.png"),segment_out)
         image = torch.from_numpy(img)
         image = image[np.newaxis, :]
         image = image.permute(2,3,1,0)
         image = torch.squeeze(image)
        
         seg_img_fuse = translucent(image.numpy(),segment_out)
-        
+        seg_img_fuse = cv2.cvtColor(np.asarray(seg_img_fuse), cv2.COLOR_BGR2RGB)
         
         yolo_out,img_cpu,_,_,_ = yolov7_track.predict(img)
-        
-        out,online_tlwhs,online_ids,cls_list,fps,track_cls = yolov7_track.track(yolo_out,vid_cap,img_cpu,(w,h))
-        #print(online_tlwhs)
-        
-        translucent_track = plot_tracking_route(seg_img_fuse, online_tlwhs,track_cls,online_ids, frame_id=count+1, fps=fps,yolo_dataset=yolo_dataset)
+        try:
+            out,online_tlwhs,online_ids,cls_list,fps,track_cls = yolov7_track.track(yolo_out,vid_cap,img_cpu,(w,h))
+            translucent_track = plot_tracking_route(seg_img_fuse, online_tlwhs,track_cls,online_ids, frame_id=count+1, fps=fps,yolo_dataset=yolo_dataset)
+        except UnboundLocalError:
+             translucent_track =seg_img_fuse
+
         
         count +=1
         
@@ -291,7 +294,7 @@ if __name__ == '__main__':
     parser.add_argument('--source', type=str, default='inference/images', help='source')
     parser.add_argument('--input_video', type=str, default='videos/bus.mp4', help='source')
     # file/folder, 0 for webcam
-    parser.add_argument('--yolo_dataset', type=str, default='coco')
+    parser.add_argument('--yolo_dataset', type=str, default='davinci')
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.7, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
