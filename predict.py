@@ -6,7 +6,7 @@ import os
 import random
 import argparse
 import numpy as np
-
+#####
 from torch.utils import data
 from DeepLabV3Plus_Pytorch.datasets import data
 from torchvision import transforms as T
@@ -33,6 +33,11 @@ from yolov7.utils.plots import plot_one_box
 from yolov7.utils.torch_utils import select_device, load_classifier, time_synchronized, TracedModel
 from yolov7.utils.visualize import plot_tracking,plot_tracking_route
 from yolov7.utils.timer import Timer
+####### yolo deepdoc cut line ################
+import Deepdoc.encoding.utils as utils
+from Deepdoc.encoding.nn import BatchNorm2d
+from Deepdoc.encoding.datasets import get_segmentation_dataset ,test_batchify_fn
+from Deepdoc.encoding.models import get_model, get_segmentation_model ,MultiEvalModule
 
 name_coco = [ 'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
          'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
@@ -50,6 +55,7 @@ class Deeplab():
         self.decode_fn = decode_fn
         self.opt = opt
         self.pretrained = pretrained
+        #print("55555555555555555555555555",self.opt.model)
         self.model = network.modeling.__dict__[self.opt.model](num_classes=21, output_stride=opt.output_stride)
        
         if self.opt.ckpt is not None and os.path.isfile(self.opt.ckpt):
@@ -195,7 +201,61 @@ class Yolov7_tracker():
                 fps = 0
             
         return out,online_tlwhs,online_ids,cls_list,fps,online_cls
-        
+
+class DeepDoc():
+    def __init__(self,pretrained,opt,device):
+        self.device = device
+        self.opt = opt
+        self.pretrained = pretrained
+        self.model = get_segmentation_model(name = self.opt.deepdoc_mod,backbone=self.opt.backbone,dilated=self.opt.dilated,lateral = self.opt.lateral, 
+                                    jpu = self.opt.jpu, aux = self.opt.aux,
+                                    se_loss = self.opt.se_loss, norm_layer = BatchNorm2d,
+                                    base_size = self.opt.base_size, crop_size = self.opt.crop)
+
+        if self.opt.resume is None or not os.path.isfile(self.opt.resume):
+            raise RuntumeError("=> no checkpoint found at '{}'" .format(self.opt.resume))
+        self.checkpoint = torch.load(self.opt.resume)
+        self.model.load_state_dict(self.checkpoint["state_dict"])
+        print('---------- Networks initialized -------------')
+        self.scales = [0.5,1.0]
+        self.evaluator = MultiEvalModule(self.model,8,scales=self.scales,flip=True)
+        self.evaluator.to(self.device)
+        with torch.no_grad():
+            self.evaluator = self.evaluator.eval()
+        self.metric = utils.SegmentationMetric(nclass=8)
+        self.mapping = {
+                    0: 0,  
+                    1: 200, #uterus
+                    2: 100, #ovary
+                    3: 150, #uterus tube
+                    4: 50,  #colon
+                    5: 225, #ovarian tumor
+                    6: 255, #tools
+                    7: 250  #myoma
+                }
+
+    def mask_to_class(mask):
+        for k in mapping:
+            mask_copy = np.copy(mask)
+            mask_copy[mask==k] = mapping[k]
+        return mask_copy
+
+    def predict(self,image,img_path):
+        transform = transform.Compose([
+            transform.ToTensor(),
+            transform.Normalize([.485, .456, .406], [.229, .224, .225])])
+        image = transform(image).unsqueeze(0)
+        image = image.to(self.device)
+        out = self.evaluator.parallel_forward(image)
+        pred = [(torch.max(output, 1)[1].cpu().numpy())
+                            for output in outputs]
+
+        mask = Image.fromarray(pred.squeeze().astype('uint8'))
+        mask = np.asarray(mask)
+        mask = mask_to_class(mask)
+
+        return mask
+
 def translucent(bottom,top):
     
     out = cv2.addWeighted(bottom,1,top,0.5,0)
@@ -239,7 +299,13 @@ def main(opt):
     ave_img = not opt.nosave and not source.endswith('.txt')  # save inference images
     device1 = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     device2 = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-    deeplab = Deeplab(opt.ckpt,opt,device1,decode_fn)
+    if opt.seg_mod == "DeepDoc":
+        deepdoc = DeepDoc(opt.resume,opt,device1)
+        print("Deepdoc on!")
+    if opt.seg_mod == "deeplab":
+        deeplab = Deeplab(opt.ckpt,opt,device1,decode_fn)
+        print("deeplab on!")
+    assert False
     yolov7_track = Yolov7_tracker(opt,weights,device2,imgsz,trace)
     dataset = LoadImages(source,img_size=yolov7_track.imgsz,stride=yolov7_track.stride)
     
@@ -255,16 +321,17 @@ def main(opt):
         c,h,w= img.shape
         if vid_cap:
             fps = vid_cap.get(cv2.CAP_PROP_FPS)
-        segment_out = deeplab.detect(path)
-        segment_out =cv2.cvtColor(np.asarray(segment_out), cv2.COLOR_RGB2BGR)
-        
-        segment_out = cv2.resize(segment_out,(w,h),interpolation=cv2.INTER_LINEAR)
-        
-        cv2.imwrite(os.path.join(f"mask/{source}",f"{count}.png"),segment_out)
-        image = torch.from_numpy(img)
-        image = image[np.newaxis, :]
-        image = image.permute(2,3,1,0)
-        image = torch.squeeze(image)
+        if opt.seg_model =="deeplab":
+            segment_out = deeplab.detect(path)
+            segment_out =cv2.cvtColor(np.asarray(segment_out), cv2.COLOR_RGB2BGR)
+            
+            segment_out = cv2.resize(segment_out,(w,h),interpolation=cv2.INTER_LINEAR)
+            
+            cv2.imwrite(os.path.join(f"mask/{source}",f"{count}.png"),segment_out)
+            image = torch.from_numpy(img)
+            image = image[np.newaxis, :]
+            image = image.permute(2,3,1,0)
+            image = torch.squeeze(image)
        
         seg_img_fuse = translucent(image.numpy(),segment_out)
         seg_img_fuse = cv2.cvtColor(np.asarray(seg_img_fuse), cv2.COLOR_BGR2RGB)
@@ -329,8 +396,8 @@ if __name__ == '__main__':
                               network.modeling.__dict__[name])
                               )
 
-    parser.add_argument("--model", type=str, default='deeplabv3plus_mobilenet',
-                        choices=available_models, help='model name')
+    parser.add_argument("--model", type=str, default= 'deeplabv3plus_effiformer',
+                        choices=available_models,help='model name')
     parser.add_argument("--separable_conv", action='store_true', default=False,
                         help="apply separable conv to decoder and aspp")
     parser.add_argument("--output_stride", type=int, default=16, choices=[8, 16])
@@ -348,7 +415,44 @@ if __name__ == '__main__':
     
     parser.add_argument("--ckpt", default=None, type=str,
                         help="resume from checkpoint")
-    
+    ### Deepdoc options ###
+    ## model / backbone / resume --mode  --aux --se-loss --jpu
+    parser.add_argument('--deepdoc_mod', type=str, default='encnet',
+                            help='model name (default: encnet)')
+    parser.add_argument('--backbone', type=str, default='efficientnet',
+                        help='backbone name (default: resnet50)')
+    parser.add_argument('--jpu', action='store_true', default=
+                        False, help='JPU')
+    parser.add_argument('--workers', type=int, default=16,
+                            metavar='N', help='dataloader threads')
+    parser.add_argument('--base_size', type=int, default=520,
+                        help='base image size')
+    parser.add_argument('--crop', type=int, default=480,
+                        help='crop image size')
+    parser.add_argument('--aux', action='store_true', default= False,
+                            help='Auxilary Loss')
+    parser.add_argument('--aux-weight', type=float, default=0.2,
+                        help='Auxilary loss weight (default: 0.2)')
+    parser.add_argument('--se-loss', action='store_true', default= False,
+                        help='Semantic Encoding Loss SE-loss')
+    parser.add_argument('--se-weight', type=float, default=0.2,
+                        help='SE-loss weight (default: 0.2)')
+    parser.add_argument('--no-cuda', action='store_true', default=
+                    False, help='disables CUDA training')
+    parser.add_argument('--seed', type=int, default=1, metavar='S',
+                        help='random seed (default: 1)')
+    parser.add_argument('--dilated', action='store_true', default=
+                            False, help='dilation')
+
+
+    parser.add_argument('--lateral', action='store_true', default=
+                    False, help='employ FPN')
+    # # # checking point
+    parser.add_argument('--resume', type=str, default=None,
+                            help='put the path to resuming file if needed')
+    ##### segment model option ############
+    parser.add_argument("--seg_mod",type=str,default="deeplab",
+                            help = "choose which segment model you need")
     ########### option endline ######################
     
     opt = parser.parse_args()
