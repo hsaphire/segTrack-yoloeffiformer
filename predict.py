@@ -305,7 +305,7 @@ def main(opt):
     if opt.seg_mod == "deeplab":
         deeplab = Deeplab(opt.ckpt,opt,device1,decode_fn)
         print("deeplab on!")
-    assert False
+    
     yolov7_track = Yolov7_tracker(opt,weights,device2,imgsz,trace)
     dataset = LoadImages(source,img_size=yolov7_track.imgsz,stride=yolov7_track.stride)
     
@@ -321,7 +321,7 @@ def main(opt):
         c,h,w= img.shape
         if vid_cap:
             fps = vid_cap.get(cv2.CAP_PROP_FPS)
-        if opt.seg_model =="deeplab":
+        if opt.seg_mod =="deeplab":
             segment_out = deeplab.detect(path)
             segment_out =cv2.cvtColor(np.asarray(segment_out), cv2.COLOR_RGB2BGR)
             
