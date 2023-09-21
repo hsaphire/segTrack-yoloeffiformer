@@ -6,6 +6,7 @@ import os
 import random
 import argparse
 import numpy as np
+import sys
 #####
 from torch.utils import data
 from DeepLabV3Plus_Pytorch.datasets import data
@@ -55,21 +56,25 @@ class Deeplab():
         self.decode_fn = decode_fn
         self.opt = opt
         self.pretrained = pretrained
-        #print("55555555555555555555555555",self.opt.model)
-        self.model = network.modeling.__dict__[self.opt.model](num_classes=21, output_stride=opt.output_stride)
+        
+        self.model = network.modeling.__dict__[self.opt.model](num_classes=8, output_stride=opt.output_stride)
        
         if self.opt.ckpt is not None and os.path.isfile(self.opt.ckpt):
             self.checkpoint = torch.load(self.opt.ckpt, map_location=torch.device('cpu'))
             self.model.load_state_dict(self.checkpoint["model_state"])
             self.model = nn.DataParallel(self.model)
-            self.model.to(self.device)
             self.model.half()
+            self.model.to(self.device)
+           
             print("Resume model from %s" % self.opt.ckpt)
             #print(self.model.device)
             del self.checkpoint
         else:
             print("[!] Retrain")
+            self.checkpoint = torch.load(self.opt.ckpt, map_location=torch.device('cpu'))
+            self.model.load_state_dict(self.checkpoint["model_state"])
             self.model = nn.DataParallel(self.model)
+            self.model.half()
             self.model.to(self.device)
             #print(self.model.device)
         with torch.no_grad():
@@ -102,10 +107,12 @@ class Deeplab():
         img = img.half()
         
         pred =self.model(img).max(1)[1].cpu().numpy()[0] # HW
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(pred)
+        # assert False
         colorized_preds = self.decode_fn(pred).astype('uint8')
         colorized_preds = Image.fromarray(colorized_preds)
-       
-        
+
         return colorized_preds
             
 class Yolov7_tracker():
@@ -119,44 +126,40 @@ class Yolov7_tracker():
         self.tracker = BYTETracker(opt,frame_rate=30)
         if trace:
             self.model = TracedModel(self.yolo_model , device, opt.img_size)
-
-       
-        self.names = model.module.names if hasattr(self.model, 'module') else self.model.names
+        self.old_img_b = 1
+        self.old_img_w = self.old_img_h = self.imgsz
+        self.names = self.model.module.names if hasattr(self.model, 'module') else self.model.names
         self.colors = [[random.randint(0, 255) for _ in range(3)] for _ in self.names] 
+        
+        if self.device.type !="cpu":
+            self.model(torch.zeros(1,3,self.imgsz,self.imgsz).to(self.device).type_as(next(self.model.parameters())))
         
     def predict(self,img):
         
-        if self.device.type !="cpu":
-            half = True
-            self.model(torch.zeros(1,3,self.imgsz,self.imgsz).to(self.device).type_as(next(self.model.parameters())))
-        old_img_w = old_img_h = self.imgsz
-        old_img_b = 1
         
-        
+        ########### not influence time
         img = torch.from_numpy(img).to(self.device)
         img =  img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
-
-        if self.device.type != 'cpu' and (old_img_b != img.shape[0] or old_img_h != img.shape[2] or old_img_w != img.shape[3]):
-            old_img_b = img.shape[0]
-            old_img_h = img.shape[2]
-            old_img_w = img.shape[3]
+        ##########
+        
+        if self.device.type != 'cpu' and (self.old_img_b != img.shape[0] or self.old_img_h != img.shape[2] or self.old_img_w != img.shape[3]):
+            self.old_img_b = img.shape[0]
+            self.old_img_h = img.shape[2]
+            self.old_img_w = img.shape[3]
             for i in range(3):
                 self.model(img, augment=self.opt.augment)[0]
-
-        t1 = time_synchronized()
+       
         with torch.no_grad():   # Calculating gradients would cause a GPU memory leak
             pred = self.model(img, augment=self.opt.augment)[0]
-
-        t2 = time_synchronized()
-
+        
         # Apply NMS
         pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
-        t3 = time_synchronized()
+       
         img = 255*(img.cpu())
-        return pred,img ,t1 ,t2 ,t3
+        return pred,img 
      
         
         
@@ -290,7 +293,7 @@ def main(opt):
     source,weights,view_img,save_txt,imgsz,trace,yolo_dataset=  opt.source,opt.weights,opt.view_img,opt.save_txt,opt.img_size,not opt.no_trace,opt.yolo_dataset
     
     if opt.dataset.lower() == 'voc':
-        opt.num_classes = 21
+        opt.num_classes = 8
         decode_fn = VOCSegmentation.decode_target
     elif opt.dataset.lower() == 'cityscapes':
         opt.num_classes = 19
@@ -314,7 +317,7 @@ def main(opt):
         os.makedirs(f"mask/{source}")
     except FileExistsError:
         pass
-        
+    
     count = 0
     for path, img, im0s, vid_cap in tqdm(dataset):
         
@@ -326,7 +329,6 @@ def main(opt):
             segment_out =cv2.cvtColor(np.asarray(segment_out), cv2.COLOR_RGB2BGR)
             
             segment_out = cv2.resize(segment_out,(w,h),interpolation=cv2.INTER_LINEAR)
-            
             cv2.imwrite(os.path.join(f"mask/{source}",f"{count}.png"),segment_out)
             image = torch.from_numpy(img)
             image = image[np.newaxis, :]
@@ -335,8 +337,10 @@ def main(opt):
        
         seg_img_fuse = translucent(image.numpy(),segment_out)
         seg_img_fuse = cv2.cvtColor(np.asarray(seg_img_fuse), cv2.COLOR_BGR2RGB)
-        
-        yolo_out,img_cpu,_,_,_ = yolov7_track.predict(img)
+        t1 = time.time()
+        yolo_out,img_cpu= yolov7_track.predict(img)
+        t2 = time.time()
+        print("last",t2-t1) ##=>0.01s
         try:
             out,online_tlwhs,online_ids,cls_list,fps,track_cls = yolov7_track.track(yolo_out,vid_cap,img_cpu,(w,h))
             translucent_track = plot_tracking_route(seg_img_fuse, online_tlwhs,track_cls,online_ids, frame_id=count+1, fps=fps,yolo_dataset=yolo_dataset)
