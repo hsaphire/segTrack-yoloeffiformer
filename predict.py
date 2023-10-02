@@ -32,7 +32,7 @@ from yolov7.utils.general import check_img_size, check_requirements, check_imsho
     scale_coords, xyxy2xywh, strip_optimizer, set_logging, increment_path
 from yolov7.utils.plots import plot_one_box
 from yolov7.utils.torch_utils import select_device, load_classifier, time_synchronized, TracedModel
-from yolov7.utils.visualize import plot_tracking,plot_tracking_route
+from yolov7.utils.visualize import plot_tracking_route
 from yolov7.utils.timer import Timer
 ####### yolo deepdoc cut line ################
 import Deepdoc.encoding.utils as utils
@@ -107,9 +107,7 @@ class Deeplab():
         img = img.half()
         
         pred =self.model(img).max(1)[1].cpu().numpy()[0] # HW
-        # np.set_printoptions(threshold=sys.maxsize)
-        # print(pred)
-        # assert False
+ 
         colorized_preds = self.decode_fn(pred).astype('uint8')
         colorized_preds = Image.fromarray(colorized_preds)
 
@@ -178,8 +176,7 @@ class Yolov7_tracker():
                 online_ids = []
                 online_scores = []
                 
-                obj_conf = torch.ones(det.shape[0],1).to(self.device)
-               
+                #obj_conf = torch.ones(det.shape[0],1).to(self.device)
                 det2 = torch.cat([det[ :,:4],det[ :,4:]],axis=1)
                 det2=det2.cpu()
                 online_targets =self.tracker.update(det2, [img_size[0],img_size[1]], img_size)
@@ -272,7 +269,7 @@ def basic(input_video = 'outdoor.mp4', source = "LASAD-YOLO-s", output_video = '
 
     img = cv2.imread(os.path.join(source, '1.png'))  
     size = (img.shape[1],img.shape[0])  
-    print(size)
+    
     fourcc = cv2.VideoWriter_fourcc(*"XVID") 
     videoWrite = cv2.VideoWriter(output_video,fourcc,fps,size)
 
@@ -340,10 +337,10 @@ def main(opt):
         t1 = time.time()
         yolo_out,img_cpu= yolov7_track.predict(img)
         t2 = time.time()
-        print("last",t2-t1) ##=>0.01s
+        #print("last",t2-t1) ##=>0.01s
         try:
             out,online_tlwhs,online_ids,cls_list,fps,track_cls = yolov7_track.track(yolo_out,vid_cap,img_cpu,(w,h))
-            translucent_track = plot_tracking_route(seg_img_fuse, online_tlwhs,track_cls,online_ids, frame_id=count+1, fps=fps,yolo_dataset=yolo_dataset)
+            translucent_track = plot_tracking_route(seg_img_fuse, online_tlwhs,track_cls,online_ids, frame_id=count+1, fps=fps,yolo_dataset=yolo_dataset,source=source)
         except UnboundLocalError:
              translucent_track =seg_img_fuse
 

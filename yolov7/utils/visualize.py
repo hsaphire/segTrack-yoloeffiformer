@@ -3,7 +3,7 @@ import numpy as np
 import os
 __all__ = ["vis"]
 
-track_route = []
+
 def vis(img, boxes, scores, cls_ids, conf=0.5, class_names=None):
 
     for i in range(len(boxes)):
@@ -60,57 +60,10 @@ name_coco = [ 'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'trai
          'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
          'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear',
          'hair drier', 'toothbrush' ]
-def plot_tracking(image, tlwhs,obj_ids, scores=None, frame_id=0, fps=0., ids2=None):
-    im = np.ascontiguousarray(np.copy(image)).astype(np.uint8)
-    im_h, im_w = im.shape[:2]
 
-    top_view = np.zeros([im_w, im_w, 3], dtype=np.uint8) + 255
-
-    #text_scale = max(1, image.shape[1] / 1600.)
-    #text_thickness = 2
-    #line_thickness = max(1, int(image.shape[1] / 500.))
-    text_scale = 2
-    text_thickness = 2
-    line_thickness = 3
-    
-    radius = max(5, int(im_w/140.))
-    cv2.putText(im, 'frame: %d fps: %.2f num: %d' % (frame_id, fps, len(tlwhs)),
-                (0, int(15 * text_scale)), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 255), thickness=2)
-    
-    for i, tlwh in enumerate(tlwhs):
-        x1, y1, w, h = tlwh
-        
-        center_point = [x1+w/2,y1+h/2]
-        intbox = tuple(map(int, (x1, y1, x1 + w, y1 + h)))
-        #print(intbox)
-        track_route.append(center_point)
-        if len(track_route) > 30:
-            track_route.pop(0)
-        obj_id = int(obj_ids[i])
-        id_text = '{}'.format(int(obj_id))
-        if ids2 is not None:
-            id_text = id_text + ', {}'.format(int(ids2[i]))+ name[int(obj_cls)]
-        color = get_color(abs(obj_id))
-        if track_route:
-            #print(len(track_route))
-            for route in track_route:
-                #print(route[0],route[1])
-                cv2.circle(im,(int(route[0]),int(route[1])),1,[0,0,255],1)
-        if intbox:
-            #print(im.shape)
-           # print(intbox[0:4])
-            #print(id_text)
-            cv2.rectangle(im, intbox[0:2], intbox[2:4], color=color, thickness=1)
-            cv2.putText(im, id_text,(intbox[0], intbox[1]), cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 0, 255),
-                        thickness=2)
-        else:
-            print("err")
-        #print("546456446",im.shape)
-        #cv2.imwrite("5546456546456456456456.jpg",im)
-        #assert False
-    return im
-
+track_route = []
 obj_point_list = {}
+
 def path(obj_route,h,w,vis_id):   #here need to insert id that you want
     background = np.zeros([h,w,3])
 
@@ -118,36 +71,47 @@ def path(obj_route,h,w,vis_id):   #here need to insert id that you want
         cv2.circle(background,(point),2,[255,255,255],-1)
     return background
 
+def obj_track_alert(obj_route,h,w,vis_id):
+    background = np.zeros([h,w,3])
+
+    coordinate = obj_route[vis_id]
+    coordinate_shift = coordinate.copy()
+    coordinate_shift.append(coordinate_shift.pop(0))
+    
+    distance = [(coordinate[i][0]-coordinate_shift[i][0])**2+(coordinate[i][1]-coordinate_shift[i][1])**2\
+         for i in range(len(coordinate))]
+    
+    
+    mapping = np.array(distance) > 100
+    
+
+    for idx,point in enumerate(obj_route[vis_id][:-1]):
+
+        if mapping[idx] == True :
+            cv2.circle(background,(point),2,[0,0,255],-1)
+        else :
+            cv2.circle(background,(point),2,[255,255,255],-1)
+    
+    return background
+
 
 def plot_tracking_route(image, tlwhs,obj_clses,obj_ids, scores=None, frame_id=0, fps=0., ids2=None,source=None,yolo_dataset=None):
     im = np.ascontiguousarray(np.copy(image)).astype(np.uint8)
     im_h, im_w = im.shape[:2]
-    
-    top_view = np.zeros([im_w, im_w, 3], dtype=np.uint8)
-    
     text_scale = 0.5
-    text_thickness = 2
-    line_thickness = 3
-    #print(obj_clses)
+
     for i, (tlwh,obj_cls) in enumerate(zip(tlwhs,obj_clses)):
-        track_black = np.zeros([im_h,im_w,3])
         x1, y1, w, h = tlwh
         
         center_point = [x1+w/2,y1+h/2]
         intbox = tuple(map(int, (x1, y1, x1 + w, y1 + h)))
         obj_id = int(obj_ids[i])
         
-        """
-        2023/8/9
-        
-        """
-        ########################################################################
         if obj_id in obj_point_list :
             obj_point_list[obj_id].append((int(center_point[0]),int(center_point[1]))) 
         else :
             obj_point_list[obj_id] = [(int(center_point[0]),int(center_point[1]))] 
-        #print("obj_point_list",len(obj_point_list))    
-        ########################################################################
+        
         
         try:
             os.makedirs(f"img_save/{source}/track_routes/{obj_id}")
@@ -155,7 +119,7 @@ def plot_tracking_route(image, tlwhs,obj_clses,obj_ids, scores=None, frame_id=0,
             pass
         track_image_dir= os.path.join(f"img_save/{source}/track_routes/{obj_id}")
         
-        background = path(obj_point_list,im_h,im_w,obj_id)
+        background = obj_track_alert(obj_point_list,im_h,im_w,obj_id)
         save_id = 1
         while True:
             save_route_png = f"/{save_id}.png"
@@ -177,34 +141,25 @@ def plot_tracking_route(image, tlwhs,obj_clses,obj_ids, scores=None, frame_id=0,
             id_text = id_text + ', {}'.format(int(ids2[i]))
         color = get_color(abs(obj_id))
         if track_route:
-            #print(len(track_route))
             for route in track_route:
                 #target track_id : obj_id
-                
                 cv2.circle(im,(int(route[0]),int(route[1])),1,[0,0,255],1)
          
         if intbox:
-            #print("obj_cls",obj_cls)
-            #print(yolo_dataset)
+
             if yolo_dataset =="davinci":
                 lines = id_text +" "+names[obj_cls]
-                #print(names[obj_cls])
+     
             elif yolo_dataset =="coco":
                 lines = id_text +" "+name_coco[obj_cls]
-            
-            #print(type(lines))
-            #print(lines,intbox[0:2])
-            #print("aaaaaaaaaaaaaaaaaaa",id_text)
+
             cv2.rectangle(im, intbox[0:2], intbox[2:4], color=color, thickness=1)
             cv2.putText(im, lines, (intbox[0], intbox[1]), 0, text_scale, (0, 0, 255),
                         thickness=1,lineType=cv2.LINE_AA)
-            #cv2.imwrite(f"{i}_img.png", im)
-            #print(i)
+     
         else:
             print("err")
-        #print("546456446",im.shape)
-        #cv2.imwrite("5546456546456456456456.jpg",im)
-        #assert False
+
     return im
 
 _COLORS = np.array(
