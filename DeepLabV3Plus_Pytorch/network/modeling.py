@@ -138,8 +138,27 @@ def _segm_effiformer(name, backbone_name, num_classes, output_stride, pretrained
     if name =='deeplabv3plus':
         return_layers = {'network': 'out', 'patch_embed': 'low_level'}
         classifier = DeepLabHead(inplanes , num_classes, aspp_dilate)
-    else:
         print("NaneError")
+    model = DeepLabV3(backbone,classifier)
+    return model
+
+def _segm_effiformers2(name,backbone_name,num_classes,output_stride,pretrained_backbone):
+    if output_stride==8:
+        aspp_dilate = [12,24,36]
+    else:
+        aspp_dilate = [6,12,18]
+        replace_stride_with_dilation=[False,False,True]
+    backbone = efficientformerv2.efficientformerv2_s2("pretrained/eformer_s2_450.pth",outputstride=output_stride)
+    
+    inplanes = 288
+    low_level_planes = 64
+    if name == 'deeplabv3plus':
+        return_layers ={'network': 'out', 'patch_embed': 'low_level'}
+        classifier = DeepLabHeadV3Plus(inplanes,low_level_planes,num_classes,aspp_dilate)
+    elif name == 'deeplabv3':
+        return_layers = {"network":"out"}
+        classifier = DeepLabHead(inplanes,num_classes,aspp_dilate)
+        
     model = DeepLabV3(backbone,classifier)
     return model
 
@@ -158,6 +177,8 @@ def _load_model(arch_type, backbone, num_classes, output_stride, pretrained_back
         model = _segm_effiformer(arch_type,backbone,num_classes,output_stride=output_stride,
 pretrained_backbone=pretrained_backbone)
     
+    elif backbone=='effiformer_s2':
+        model = _segm_effiformers2(arch_type,backbone,num_classes,output_stride=output_stride,pretrained_backbone=pretrained_backbone)
     else:
         raise NotImplementedError
         
@@ -261,11 +282,13 @@ def deeplabv3plus_xception(num_classes=21, output_stride=8, pretrained_backbone=
     """
     return _load_model('deeplabv3plus', 'xception', num_classes, output_stride=output_stride, pretrained_backbone=pretrained_backbone)
 
-def deeplabv3plus_effiformer(num_classes=21,output_stride = 8,pretrained_backbone = True):
+def deeplabv3plus_effiformer(num_classes=8,output_stride = 8,pretrained_backbone = True):
     #print(pretrained_backbone)
     return _load_model('deeplabv3plus','effiformer',num_classes,output_stride=output_stride,
 pretrained_backbone=pretrained_backbone)
 
+def deeplabv3plus_effiformer_s2(num_classes=8,output_stride=8,pretrained_backbone=True):
+    return _load_model('deeplabv3','effiformer_s2',num_classes,output_stride=output_stride,pretrained_backbone=pretrained_backbone)
 if __name__ == "__main__":
     
     #model = deeplabv3plus_effiformer()

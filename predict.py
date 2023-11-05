@@ -105,9 +105,10 @@ class Deeplab():
         img = transform(img).unsqueeze(0) # To tensor of NCHW
         img = img.to(self.device)
         img = img.half()
-        
+        t8 = time.time()
         pred =self.model(img).max(1)[1].cpu().numpy()[0] # HW
- 
+        t9 = time.time()
+        print("time",t9-t8)
         colorized_preds = self.decode_fn(pred).astype('uint8')
         colorized_preds = Image.fromarray(colorized_preds)
 

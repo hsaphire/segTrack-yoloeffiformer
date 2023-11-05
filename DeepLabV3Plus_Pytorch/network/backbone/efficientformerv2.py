@@ -135,7 +135,7 @@ class Attention4D(torch.nn.Module):
         B, C, H, W = x.shape
         if self.stride_conv is not None:
             x = self.stride_conv(x)
-        #print("45646444664546",(self.q(x).flatten(2)).shape)
+        
         q = self.q(x).flatten(2).reshape(B, self.num_heads, -1, self.N).permute(0, 1, 3, 2)
         k = self.k(x).flatten(2).reshape(B, self.num_heads, -1, self.N).permute(0, 1, 2, 3)
         v = self.v(x)
@@ -696,6 +696,9 @@ def efficientformerv2_s2(pretrained=False, **kwargs):
         drop_path_rate=0.02,
         e_ratios=expansion_ratios_S2,
         **kwargs)
+    ckpt = torch.load(pretrained)
+    model.load_state_dict(ckpt['model'],strict=False)
+    
     model.default_cfg = _cfg(crop_pct=0.9)
     return model
 
@@ -731,7 +734,6 @@ def efficientformerv2_l(pretrained=False, **kwargs):
 
 
 #('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
-
 
 
 
