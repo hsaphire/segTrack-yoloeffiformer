@@ -1,7 +1,9 @@
-python predict.py --ckpt DeepLabV3Plus_Pytorch/checkpoints/best_deeplabv3plus_mobilenet_voc_os16.pth --dataset voc --model deeplabv3plus_effiformer --weight pretrained/yolov7.pt  --source train.jpg 
+#inference
 
-python predict.py --ckpt DeepLabV3Plus_Pytorch/checkpoints/best_deeplabv3plus_effiformer_voc_os16.pth --yolo_dataset coco --dataset voc --model deeplabv3plus_effiformer --weight pretrained/yolov7.pt  --source train.jpg 
+python predict.py --ckpt pretrained/best_deeplabv3plus_mobilenet_voc_os16.pth --crop_val --yolo_dataset coco --dataset voc --model deeplabv3plus_mobilenet --weight pretrained/yolov7.pt  --source videos/bus
 
-python predict.py --ckpt DeepLabV3Plus_Pytorch/checkpoints/best_deeplabv3plus_effiformer_voc_os16.pth --yolo_dataset coco --dataset voc --model deeplabv3plus_effiformer --weight pretrained/yolov7.pt  --source videos/bus
+python predict.py --seg_mod DeepDoc --backbone efficientnet --resume /data/4TB/hsiao/DeepDoc/checkpoint/mydata/encnet/test_shape/checkpoint.pth.tar --aux --se-loss --jpu --yolo_dataset davinci --weight pretrained/best.pt --source videos/video1
 
-python predict.py --seg_mod deeplab --backbone efficientnet --resume /data/4TB/hsiao/DeepDoc/checkpoint/mydata/encnet/test_shape/checkpoint.pth.tar --aux --se-loss --jpu --ckpt DeepLabV3Plus_Pytorch/checkpoints/best_deeplabv3plus_effiformer_voc_os16.pth --yolo_dataset coco --dataset voc  --weight pretrained/yolov7.pt  --source videos/bus 
+python predict.py --seg_mod deeplab  --model deeplabv3plus_effiformer --ckpt pretrained/best_deeplabv3plus_effiformer_voc_os8_3000.pth --yolo_dataset davinci --weight pretrained/best.pt --source videos/video1 --crop_val
+
+python predict.py --seg_mod deeplab  --model deeplabv3plus_effiformer_s2 --ckpt pretrained/best_deeplabv3plus_effiformer_s2_voc_os8.pth --yolo_dataset davinci --weight pretrained/best.pt --source videos/video1 --crop_val

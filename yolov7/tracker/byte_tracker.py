@@ -97,7 +97,7 @@ class STrack(BaseTrack):
             return self._tlwh.copy()
         ret = self.mean[:4].copy()
         ret[2] *= ret[3]
-        ret[:2] -= ret[2:] / 2
+        ret[:2] -= ret[2:4] / 2
         return ret
 
     @property
@@ -107,7 +107,7 @@ class STrack(BaseTrack):
         `(top left, bottom right)`.
         """
         ret = self.tlwh.copy()
-        ret[2:] += ret[:2]
+        ret[2:4] += ret[:2]
         return ret
 
     @staticmethod
@@ -128,7 +128,7 @@ class STrack(BaseTrack):
     # @jit(nopython=True)
     def tlbr_to_tlwh(tlbr):
         ret = np.asarray(tlbr).copy()
-        ret[2:] -= ret[:2]
+        ret[2:4] -= ret[:2]
         return ret
 
     @staticmethod
@@ -164,33 +164,39 @@ class BYTETracker(object):
         removed_stracks = []
 
         if output_results.shape[1] == 5:
+            #print(output_results[:, :4])
             scores = output_results[:, 4]
             bboxes = output_results[:, :4]
         else:
             output_results = output_results.cpu().numpy()
             scores = output_results[:, 4] * output_results[:, 5]
             bboxes = output_results[:, :4]  # x1y1x2y2
+            
+            bboxess = np.concatenate((bboxes,output_results[:, 6:]),axis=1)
+            #print(scores)
         img_h, img_w = img_info[0], img_info[1]
         scale = min(img_size[0] / float(img_h), img_size[1] / float(img_w))
-        bboxes /= scale
-
+        bboxess[:,:4] /= scale
+       
         remain_inds = scores > self.args.track_thresh
         inds_low = scores > 0.1
         inds_high = scores < self.args.track_thresh
 
         inds_second = np.logical_and(inds_low, inds_high)
-        dets_second = bboxes[inds_second]
-        dets = bboxes[remain_inds]
+       
+        dets_second = bboxess[inds_second]
+        dets = bboxess[remain_inds]
+        
         scores_keep = scores[remain_inds]
         scores_second = scores[inds_second]
 
         if len(dets) > 0:
             '''Detections'''
-            detections = [STrack(STrack.tlbr_to_tlwh(tlbr), s) for
+            detections = [STrack(STrack.tlbr_to_tlwh(tlbr[:4]), s) for
                           (tlbr, s) in zip(dets, scores_keep)]
         else:
             detections = []
-
+        #print(detections)
         ''' Add newly detected tracklets to tracked_stracks'''
         unconfirmed = []
         tracked_stracks = []  # type: list[STrack]
@@ -267,6 +273,7 @@ class BYTETracker(object):
                 continue
             track.activate(self.kalman_filter, self.frame_id)
             activated_starcks.append(track)
+            print(activated_starcks)
         """ Step 5: Update state"""
         for track in self.lost_stracks:
             if self.frame_id - track.end_frame > self.max_time_lost:
